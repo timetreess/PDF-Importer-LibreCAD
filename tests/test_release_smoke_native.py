@@ -102,6 +102,29 @@ def test_portable_smoke_exercises_glyphs_and_visible_text_fallbacks(
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
+        if Path(command[0]).name == "pdf2geocad.exe" and "--gcp" in command:
+            output_dir = Path(command[command.index("--output-dir") + 1])
+            source = Path(command[1])
+            (output_dir / f"{source.stem}_georef.dxf").write_text(
+                "DXF",
+                encoding="utf-8",
+            )
+            (output_dir / f"{source.stem}_georef.json").write_text(
+                json.dumps(
+                    {
+                        "status": "Calibrated",
+                        "threshold_status": "pass",
+                        "method": "helmert",
+                        "crs": {"authority": "EPSG:5186"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (output_dir / f"{source.stem}_georef_report.html").write_text(
+                "<html></html>",
+                encoding="utf-8",
+            )
+            return SimpleNamespace(returncode=0, stdout="STATUS: Calibrated", stderr="")
         if "--text-mode" not in command:
             return SimpleNamespace(returncode=0, stdout="Self-test OK", stderr="")
         mode = command[command.index("--text-mode") + 1]

@@ -24,6 +24,8 @@ ENTRYPOINTS = {
     "lcpdf-import": ("librecad_pdf_importer.cli", "main", "console"),
     "lcpdf-batch": ("librecad_pdf_importer.batch_cli", "main", "console"),
     "lcpdf-gui": ("standalone_app", "main", "windowed"),
+    "pdf2geocad": ("librecad_pdf_importer.georef.cli", "main", "console"),
+    "pdf2geocad-gui": ("librecad_pdf_importer.georef.gui", "main", "windowed"),
 }
 
 HIDDEN_IMPORTS = [
@@ -38,7 +40,7 @@ HIDDEN_IMPORTS = [
     "tkinter",
 ]
 
-COLLECT_ALL = ["fontTools"]
+COLLECT_ALL = ["fontTools", "pyproj"]
 
 # LibreCAD "Plugins > Import PDF (BlueCollar)..." menu plugin (Qt 5.15 / MSVC).
 LIBRECAD_PLUGIN_DIR = "librecad-plugin"

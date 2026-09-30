@@ -172,11 +172,12 @@ def test_every_runtime_distribution_path_includes_image_and_font_dependencies() 
     assert "fonttools==4.63.0" in requirements.lower()
     assert "matplotlib==3.11.1" in requirements.lower()
     assert "numpy==2.5.1" in requirements.lower()
+    assert "pyproj==3.8.0" in requirements.lower()
     assert "create_release_venv(ROOT, VENV_ROOT)" in standalone
     assert '"--collect-all", "fonttools"' in standalone.lower()
     assert '"--copy-metadata", "fonttools"' in standalone.lower()
     assert "create_release_venv(ROOT, VENV_ROOT)" in portable
-    assert 'collect_all = ["fonttools"]' in portable.lower()
+    assert 'collect_all = ["fonttools", "pyproj"]' in portable.lower()
     assert 'copy_metadata = ["fonttools"]' in portable.lower()
     assert "load_runtime_requirements(PROJECT_ROOT)" in dependencies
     assert "def check_fonttools()" in dependencies

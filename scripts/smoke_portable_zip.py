@@ -18,6 +18,8 @@ REQUIRED_EXES = (
     "pdf2dxf.exe",
     "lcpdf-import.exe",
     "lcpdf-batch.exe",
+    "pdf2geocad.exe",
+    "pdf2geocad-gui.exe",
 )
 REQUIRED_NOTICES = (
     "LICENSE",
@@ -40,6 +42,9 @@ SOURCE_REQUIRED_MEMBERS = (
     "requirements.txt",
     "runtime_requirements.py",
     "librecad_pdf_importer/runtime_self_test.py",
+    "librecad_pdf_importer/georef/cli.py",
+    "librecad_pdf_importer/georef/gui.py",
+    "librecad_pdf_importer/georef/pipeline.py",
     "pdfcadcore/embedded_fonts.py",
     "tools/fetch_runtime_wheels.ps1",
     "third_party/fonttools/LICENSE",
@@ -154,10 +159,41 @@ def _write_tiny_pdf(path: Path) -> None:
     document = pymupdf.open()
     try:
         page = document.new_page(width=240, height=120)
+        page.draw_line((24, 24), (216, 96), color=(0, 0, 0), width=1)
         page.insert_text((24, 60), "BCS PORTABLE GLYPH", fontsize=14)
         document.save(path)
     finally:
         document.close()
+
+
+def _write_georef_gcps(path: Path) -> None:
+    width_mm = 240.0 * 25.4 / 72.0
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "gcps": [
+                    {
+                        "label": "origin",
+                        "source_x": 0.0,
+                        "source_y": 0.0,
+                        "world_x": 500000.0,
+                        "world_y": 200000.0,
+                    },
+                    {
+                        "label": "east",
+                        "source_x": width_mm,
+                        "source_y": 0.0,
+                        "world_x": 500000.0 + width_mm,
+                        "world_y": 200000.0,
+                    },
+                ],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _validate_glyph_delivery(report_path: Path) -> None:
@@ -446,6 +482,57 @@ def _smoke_extracted_portable(root: Path) -> None:
             expected_executable=synthetic_executable if final == "text" else None,
             expected_lff=synthetic_lff if final == "text" else None,
         )
+
+    gcp_path = root / "portable_smoke.gcps.json"
+    georef_output = root / "portable_georef_output"
+    georef_output.mkdir()
+    _write_georef_gcps(gcp_path)
+    proc = _run_process(
+        [
+            str(root / "pdf2geocad.exe"),
+            str(pdf_path),
+            "--gcp",
+            str(gcp_path),
+            "--transform",
+            "helmert",
+            "--crs",
+            "EPSG:5186",
+            "--output-dir",
+            str(georef_output),
+            "--rmse-threshold",
+            "0.001",
+            "--no-text",
+        ],
+        timeout=CONVERSION_TIMEOUT_SECONDS,
+        label="pdf2geocad.exe real conversion",
+    )
+    if proc.returncode != 0:
+        raise SystemExit(
+            "pdf2geocad.exe real conversion failed: "
+            + (proc.stderr.strip() or proc.stdout.strip())
+        )
+    stem = pdf_path.stem + "_georef"
+    dxf_path = georef_output / f"{stem}.dxf"
+    report_path = georef_output / f"{stem}.json"
+    html_path = georef_output / f"{stem}_report.html"
+    missing = [
+        path.name
+        for path in (dxf_path, report_path, html_path)
+        if not path.is_file() or path.stat().st_size == 0
+    ]
+    if missing:
+        raise SystemExit(
+            "pdf2geocad.exe reported success without non-empty artifacts: "
+            + ", ".join(missing)
+        )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if (
+        report.get("status") != "Calibrated"
+        or report.get("threshold_status") != "pass"
+        or report.get("method") != "helmert"
+        or report.get("crs", {}).get("authority") != "EPSG:5186"
+    ):
+        raise SystemExit("pdf2geocad.exe emitted an invalid calibration report")
 
 
 def main() -> int:

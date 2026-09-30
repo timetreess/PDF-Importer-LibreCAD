@@ -25,6 +25,7 @@ def load_runtime_dependencies() -> None:
     from ezdxf.fonts import fonts as ezdxf_fonts  # noqa: F401
     from ezdxf.fonts.font_face import FontFace  # noqa: F401
     import numpy  # noqa: F401
+    from pyproj import CRS  # noqa: F401
     import librecad_pdf_importer  # noqa: F401
     import pdfcadcore  # noqa: F401
 
@@ -34,6 +35,8 @@ def load_runtime_dependencies() -> None:
         import fitz  # type: ignore[no-redef]  # noqa: F401
 
     load_fonttools_dependencies()
+    if not CRS.from_epsg(5186).is_projected:
+        raise RuntimeError("pyproj EPSG database is unavailable")
 
 
 def run_runtime_self_test() -> int:
@@ -44,6 +47,6 @@ def run_runtime_self_test() -> int:
         return 1
     print(
         "LibreCAD PDF Importer self-test OK "
-        "(PyMuPDF, ezdxf font/text2path, FontTools, Matplotlib, NumPy)"
+        "(PyMuPDF, ezdxf font/text2path, FontTools, Matplotlib, NumPy, pyproj)"
     )
     return 0
