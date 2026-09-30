@@ -17,6 +17,7 @@ import build_windows_portable
 import deterministic_zip
 import release_build_contract
 from scripts import smoke_portable_zip
+from scripts import verify_release_artifacts
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +57,22 @@ def test_numpy_is_an_exact_direct_runtime_dependency() -> None:
     assert '"numpy==2.5.1"' in project
 
 
+def test_pyproj_is_declared_and_locked_for_source_ci_and_windows_release() -> None:
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    release_lock = (ROOT / "requirements-release-win-py312.lock").read_text(
+        encoding="utf-8"
+    )
+    workflow = (ROOT / ".github" / "workflows" / "lc-pdfimporter-ci.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "pyproj==3.8.0" in requirements
+    assert '"pyproj==3.8.0"' in project
+    assert "pyproj==3.8.0 --hash=sha256:" in release_lock
+    assert '"pyproj==3.8.0"' in workflow
+
+
 def test_runtime_requirements_have_one_source_of_truth() -> None:
     from runtime_requirements import load_runtime_requirements
 
@@ -76,7 +93,7 @@ def test_release_build_is_hash_locked_and_ci_hash_verifies_before_publish() -> N
         for line in lock.splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
-    assert len(requirements) == 21
+    assert len(requirements) == 23
     assert all("==" in requirement and "--hash=sha256:" in requirement for requirement in requirements)
     ci_lock = (ROOT / "requirements-ci-win-py312.lock").read_text(encoding="utf-8")
     ci_requirements = [
@@ -324,8 +341,48 @@ def test_every_frozen_entrypoint_exposes_a_noninteractive_self_test() -> None:
     batch = (ROOT / "librecad_pdf_importer" / "batch_cli.py").read_text(
         encoding="utf-8"
     )
+    georef_cli = (ROOT / "librecad_pdf_importer" / "georef" / "cli.py").read_text(
+        encoding="utf-8"
+    )
+    georef_gui = (ROOT / "librecad_pdf_importer" / "georef" / "gui.py").read_text(
+        encoding="utf-8"
+    )
     assert 'sys.argv[1:] == ["--self-test"]' in cli
     assert 'sys.argv[1:] == ["--self-test"]' in batch
+    assert '"--self-test"' in georef_cli
+    assert '["--self-test"]' in georef_gui
+
+
+def test_pdf2geocad_is_required_across_the_portable_release_surface() -> None:
+    assert build_windows_portable.ENTRYPOINTS["pdf2geocad"] == (
+        "librecad_pdf_importer.georef.cli",
+        "main",
+        "console",
+    )
+    assert build_windows_portable.ENTRYPOINTS["pdf2geocad-gui"] == (
+        "librecad_pdf_importer.georef.gui",
+        "main",
+        "windowed",
+    )
+    assert "pyproj" in build_windows_portable.COLLECT_ALL
+    assert "pdf2geocad.exe" in smoke_portable_zip.REQUIRED_EXES
+    assert "pdf2geocad-gui.exe" in smoke_portable_zip.REQUIRED_EXES
+    assert "pdf2geocad_exe" in verify_release_artifacts.REQUIRED_ARTIFACTS
+    assert "pdf2geocad_gui_exe" in verify_release_artifacts.REQUIRED_ARTIFACTS
+    assert "pdf2geocad.exe" in verify_release_artifacts.REQUIRED_EXE_FILENAMES
+    assert "pdf2geocad-gui.exe" in verify_release_artifacts.REQUIRED_EXE_FILENAMES
+    paths = verify_release_artifacts._canonical_artifact_paths(ROOT, "9.9.9")
+    assert paths["pdf2geocad_exe"].name == "pdf2geocad.exe"
+    assert paths["pdf2geocad_gui_exe"].name == "pdf2geocad-gui.exe"
+
+
+def test_runtime_self_test_imports_pdf2geocad_projection_dependency() -> None:
+    source = (ROOT / "librecad_pdf_importer" / "runtime_self_test.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "from pyproj import CRS" in source
+    assert "CRS.from_epsg(5186)" in source
 
 
 def test_portable_smoke_runs_all_entrypoints_and_real_glyph_conversion(
@@ -339,6 +396,25 @@ def test_portable_smoke_runs_all_entrypoints_and_real_glyph_conversion(
 
     def fake_run(command, **_kwargs):
         calls.append(command)
+        if Path(command[0]).name == "pdf2geocad.exe" and "--gcp" in command:
+            output_dir = Path(command[command.index("--output-dir") + 1])
+            source = Path(command[1])
+            for suffix in (".dxf", ".json", "_report.html"):
+                artifact = output_dir / f"{source.stem}_georef{suffix}"
+                artifact.write_text(
+                    json.dumps(
+                        {
+                            "status": "Calibrated",
+                            "threshold_status": "pass",
+                            "method": "helmert",
+                            "crs": {"authority": "EPSG:5186"},
+                        }
+                    )
+                    if suffix == ".json"
+                    else "artifact",
+                    encoding="utf-8",
+                )
+            return SimpleNamespace(returncode=0, stdout="STATUS: pass", stderr="")
         if "--text-mode" in command:
             mode = command[command.index("--text-mode") + 1]
             output = Path(command[2])
@@ -383,12 +459,19 @@ def test_portable_smoke_runs_all_entrypoints_and_real_glyph_conversion(
 
     smoke_portable_zip._smoke_extracted_portable(tmp_path)
 
-    assert [Path(call[0]).name for call in calls[:4]] == list(
+    assert [Path(call[0]).name for call in calls[: len(smoke_portable_zip.REQUIRED_EXES)]] == list(
         smoke_portable_zip.REQUIRED_EXES
     )
     conversions = [call for call in calls if "--text-mode" in call]
     assert all(Path(conversion[0]).name == "pdf2dxf.exe" for conversion in conversions)
     assert [conversion[-1] for conversion in conversions] == ["glyphs", "text", "labels"]
+    georef_conversions = [
+        call
+        for call in calls
+        if Path(call[0]).name == "pdf2geocad.exe" and "--gcp" in call
+    ]
+    assert len(georef_conversions) == 1
+    assert "--no-text" in georef_conversions[0]
 
 
 def test_portable_smoke_rejects_report_only_or_substituted_glyph_delivery(
