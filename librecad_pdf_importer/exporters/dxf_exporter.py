@@ -23,7 +23,7 @@ from ezdxf.lldxf.const import VALID_DXF_LINEWEIGHTS
 from ezdxf.lldxf.encoding import decode_dxf_unicode
 from ezdxf.math import Vec2, is_point_in_polygon_2d
 from ezdxf.math.triangulation import mapbox_earcut_2d
-from ezdxf.units import MM
+from ezdxf.units import M, MM
 
 try:
     import pymupdf as fitz  # PyMuPDF >= 1.24 preferred name
@@ -245,6 +245,8 @@ class DxfExportOptions:
     # outlined / rastered / dropped span as native TEXT on the frozen layer
     # P###_TEXT_SEARCH, so the drawing is searchable. Outlines stay the truth.
     searchable_text: bool = True
+    output_units: str = "mm"
+    seed_page_extents: bool = True
 
 
 class TextRepresentationDeliveryError(ImportStopped):
@@ -4578,6 +4580,14 @@ def _export_to_dxf_impl(
     forced_text_rungs: Optional[Mapping[str, Tuple[int, str]]] = None,
 ) -> DxfExportResult:
     opts = options or DxfExportOptions()
+    output_units = str(opts.output_units).strip().lower()
+    try:
+        insert_units, raster_units = {
+            "mm": (MM, "mm"),
+            "m": (M, "m"),
+        }[output_units]
+    except KeyError as exc:
+        raise ValueError("output_units must be 'mm' or 'm'") from exc
     forced_text_rungs = forced_text_rungs or {}
     installation = resolve_librecad_installation(opts.librecad_executable)
     librecad_contract_executable = (
@@ -4676,9 +4686,9 @@ def _export_to_dxf_impl(
     is_r12 = dxf_ver == "R12"
     reset_text_styles()
     doc = ezdxf.new(dxf_ver)
-    doc.units = MM
-    doc.header["$INSUNITS"] = 4
-    doc.set_raster_variables(frame=0, quality=1, units="mm")
+    doc.units = insert_units
+    doc.header["$INSUNITS"] = insert_units
+    doc.set_raster_variables(frame=0, quality=1, units=raster_units)
     msp = doc.modelspace()
 
     entity_count = 0
@@ -4779,10 +4789,11 @@ def _export_to_dxf_impl(
         dy = _stack_offset_y
         page_w = float(page.page_data.width or 0.0)
         page_h = float(page.page_data.height or 0.0)
-        # Seed extents from the page frame so host auto-fit still works even
-        # when selected export mode yields no drawable entities on that page.
-        _track_xy(0.0, 0.0 + dy)
-        _track_xy(page_w, page_h + dy)
+        if opts.seed_page_extents:
+            # Seed extents from the page frame so host auto-fit still works even
+            # when selected export mode yields no drawable entities on that page.
+            _track_xy(0.0, 0.0 + dy)
+            _track_xy(page_w, page_h + dy)
 
         page_entity_start = len(msp.entity_space.entities)
         paint_order = getattr(page, "image_paint_order", None)

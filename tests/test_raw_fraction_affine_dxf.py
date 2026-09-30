@@ -11,6 +11,7 @@ import pytest
 
 import dxf_text_builder as builder
 from librecad_pdf_importer.exporters.dxf_exporter import DxfExportOptions, export_to_dxf
+from librecad_pdf_importer.georef import AffineCoefficients, transform_extraction
 from librecad_pdf_importer.importer import run_import
 from pdfcadcore.primitive_extractor import extract_page
 
@@ -132,6 +133,70 @@ def test_persisted_raw_fraction_has_source_positions_and_unstretched_ink(tmp_pat
                 max(p[0] for p in expected_points), max(p[1] for p in expected_points))
     actual = builder._bbox_tuple(_visible(doc))
     assert actual == pytest.approx(expected, abs=0.015)
+
+
+@pytest.mark.parametrize("text_mode", ["glyphs", "geometry"])
+def test_georeferenced_affine_raw_span_exports_verified_without_degraded_text(
+    tmp_path, text_mode
+) -> None:
+    source = tmp_path / "georeferenced-staggered.pdf"
+    make_fraction(source, shear=4.0)
+    run = run_import(str(source), mode="vector", overrides={"pages": "1"})
+    item = next(
+        text
+        for text in run.extraction.pages[0].page_data.text_items
+        if text.text == "13/16"
+    )
+    original_metrics = (
+        item.font_size,
+        item.advance_width,
+        item.glyph_height,
+        item.baseline_descent,
+    )
+    coefficients = AffineCoefficients(2.0, 0.0, 10.0, 0.5, 3.0, -4.0)
+
+    transform_extraction(run.extraction, coefficients)
+
+    nominal_scale = math.sqrt(6.0)
+    baseline_scale = math.hypot(2.0, 0.5)
+    vertical_scale = 3.0
+    output = tmp_path / f"georeferenced-staggered-{text_mode}.dxf"
+    result = export_to_dxf(
+        run.extraction,
+        str(output),
+        DxfExportOptions(
+            include_images=False,
+            text_mode=text_mode,
+            searchable_text=False,
+        ),
+    )
+
+    delivery = next(
+        record
+        for record in result.text_deliveries
+        if record["source_id"].endswith(f":{item.id}")
+    )
+    assert delivery["requested_representation"] == text_mode
+    assert delivery["final_representation"] == text_mode
+    assert delivery["verified"] is True
+    assert delivery["fallback_used"] is False
+    assert delivery.get("degraded", False) is False
+    assert delivery["entity_handles"]
+    assert [
+        (attempt["attempted_representation"], attempt["outcome"])
+        for attempt in delivery["attempts"]
+    ] == [(text_mode, "verified")]
+    assert result.text_fallbacks == []
+    assert item.font_size == pytest.approx(original_metrics[0] * nominal_scale)
+    assert item.advance_width == pytest.approx(original_metrics[1] * baseline_scale)
+    assert item.glyph_height == pytest.approx(original_metrics[2] * vertical_scale)
+    assert item.baseline_descent == pytest.approx(
+        original_metrics[3] * vertical_scale
+    )
+    drawing = ezdxf.readfile(output)
+    modelspace_types = {entity.dxftype() for entity in drawing.modelspace()}
+    assert modelspace_types.isdisjoint({"TEXT", "MTEXT"})
+    assert not any("DEGRADED" in layer.dxf.name for layer in drawing.layers)
 
 
 def test_raw_span_rejects_character_size_mismatch_and_incomplete_inventory(tmp_path):
