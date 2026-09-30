@@ -3,3 +3,4 @@ ezdxf==1.4.4
 fonttools==4.63.0
 matplotlib==3.11.1
 numpy==2.5.1
+pyproj==3.8.0
