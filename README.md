@@ -2,7 +2,7 @@
 
 **BlueCollar-Systems -- BUILT. NOT BOUGHT.**
 
-![Version: 1.0.100](https://img.shields.io/badge/Version-1.0.103-blue.svg)
+![Version: 1.0.104](https://img.shields.io/badge/Version-1.0.104-blue.svg)
 
 Converts PDF vector drawings to DXF format for use with LibreCAD, AutoCAD,
 DraftSight, QCAD, and any DXF-compatible CAD software.
@@ -27,6 +27,105 @@ must substitute descends automatically to visually verified glyph outlines.
 - Optional native LibreCAD `Plugins` menu integration (no terminal)
 - Optional auto-open in LibreCAD after conversion
 - Built on pdfcadcore shared extraction engine
+
+## PDF2GeoCAD manual georeferencing (v0.1)
+
+PDF2GeoCAD converts page 1 of a vector PDF into a DXF whose coordinates and
+declared drawing units are metres. The user supplies ground-control points
+(GCPs) that pair source page coordinates in millimetres with known world X/Y
+coordinates. The conversion also writes machine-readable and human-readable
+quality reports with per-point residuals, RMSE, and maximum residual.
+
+This workflow is separate from the standard `pdf2dxf` conversion above. After a
+source install (`pip install -e .`), use either installed entry point:
+
+```powershell
+pdf2geocad drawing.pdf --gcp drawing.gcps.json --output-dir out
+pdf2geocad-gui
+```
+
+The CLI defaults to a 2D Helmert transform. It needs at least two distinct GCPs
+and preserves uniform scale, rotation, straight lines, angles, circles, and
+arcs. Use affine for a distorted plot; it needs at least three non-collinear
+GCPs and permits independent X/Y scale and shear:
+
+```powershell
+pdf2geocad drawing.pdf `
+  --gcp drawing.gcps.json `
+  --transform affine `
+  --crs EPSG:5186 `
+  --rmse-threshold 0.25 `
+  --dxf-version R2018 `
+  --output-dir out
+```
+
+`--crs local` is the default. An EPSG value must identify a projected CRS whose
+axis units are metres. The supplied world coordinates must already belong to
+that CRS; v0.1 validates and records the CRS but does not reproject GCP values.
+Use `--no-text` to omit text and `--text-mode` to select `text`, `labels`,
+`3d_text`, `glyphs`, or `geometry`. Run `pdf2geocad --help` for the complete
+option list. `pdf2geocad drawing.pdf --gui` opens the same desktop interface
+with the PDF preselected.
+
+### GCP JSON
+
+The CLI reads the versioned UTF-8 schema below. `source_x` and `source_y` are
+page-model millimetres; `world_x` and `world_y` are output metres. The GUI can
+save and load this format.
+
+```json
+{
+  "schema_version": 1,
+  "gcps": [
+    {
+      "label": "P1",
+      "source_x": 10.0,
+      "source_y": 20.0,
+      "world_x": 203482.214,
+      "world_y": 451392.381
+    },
+    {
+      "label": "P2",
+      "source_x": 110.0,
+      "source_y": 20.0,
+      "world_x": 203582.214,
+      "world_y": 451392.381
+    }
+  ]
+}
+```
+
+### GUI workflow
+
+1. Open a vector PDF. The GUI renders page 1.
+2. Select an output directory and choose Helmert or affine.
+3. Click a known point in the PDF, then enter its world X/Y coordinates.
+4. Add enough independent GCPs. The solver panel updates scale, rotation, RMSE,
+   maximum residual, and threshold status live.
+5. Optionally save the GCP set, then select **Export DXF**.
+
+Opening a different PDF clears the current GCPs because source coordinates are
+document-specific. Export remains disabled until the selected transform is
+solvable and an output directory is set.
+
+### Outputs and v0.1 limits
+
+For `drawing.pdf`, a successful run publishes these three files together:
+
+- `drawing_georef.dxf` - R2000 or newer DXF, `$INSUNITS` set to metres, with
+  calibration status, transform, CRS, and report reference attached as XDATA.
+- `drawing_georef.json` - complete transform, CRS, GCP residual, RMSE, threshold,
+  and output-path data.
+- `drawing_georef_report.html` - browser-readable verification report.
+
+An RMSE above the selected threshold is reported as a warning rather than
+silently accepted. Review the residuals before using the drawing for design or
+survey work.
+
+Version 0.1 intentionally supports one vector PDF page and manual GCP entry. It
+does not yet provide GeoPDF metadata recovery, GeoPackage output, scanned-PDF
+OCR/vectorization, raster fallback, embedded-image export, multi-page
+georeferencing, map-based GCP selection, or DXF R12 output.
 
 ## Import report / scale trust
 
