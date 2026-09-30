@@ -87,6 +87,8 @@ def _write_structured_candidate_zips(root: Path) -> tuple[Path, Path, dict[str, 
         "lcpdf-import.exe": b"import hosted bytes",
         "lcpdf-batch.exe": b"batch hosted bytes",
         "lcpdf-gui.exe": b"gui hosted bytes",
+        "pdf2geocad.exe": b"georef hosted bytes",
+        "pdf2geocad-gui.exe": b"georef gui hosted bytes",
     }
     with zipfile.ZipFile(portable, "w") as archive:
         for name, payload in executable_payloads.items():

@@ -56,12 +56,16 @@ REQUIRED_ARTIFACTS = (
     "lcpdf_import_exe",
     "lcpdf_batch_exe",
     "lcpdf_gui_exe",
+    "pdf2geocad_exe",
+    "pdf2geocad_gui_exe",
 )
 REQUIRED_EXE_FILENAMES = (
     "pdf2dxf.exe",
     "lcpdf-import.exe",
     "lcpdf-batch.exe",
     "lcpdf-gui.exe",
+    "pdf2geocad.exe",
+    "pdf2geocad-gui.exe",
 )
 _CANDIDATE_KEYS = {
     "schema",
@@ -1240,6 +1244,8 @@ def _canonical_artifact_paths(root: Path, version: str) -> dict[str, Path]:
         "lcpdf_import_exe": portable_root / "lcpdf-import.exe",
         "lcpdf_batch_exe": portable_root / "lcpdf-batch.exe",
         "lcpdf_gui_exe": portable_root / "lcpdf-gui.exe",
+        "pdf2geocad_exe": portable_root / "pdf2geocad.exe",
+        "pdf2geocad_gui_exe": portable_root / "pdf2geocad-gui.exe",
     }
 
 
