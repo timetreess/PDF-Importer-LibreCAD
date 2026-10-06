@@ -40,7 +40,7 @@ jobs:
         run: ruff check --select F,B pdf2dxf.py dxf_builder.py dxf_text_builder.py dxf_import_engine.py conversion_control.py page_selection.py gui.py pdfcadcore/ librecad_pdf_importer scripts
 
       - name: Install dependencies
-        run: pip install -e . pytest
+        run: pip install -e . pytest "setuptools>=68" wheel
 
       - name: Verify pdfcadcore sync manifest
         run: python pdfcadcore_sync_check.py --skip-cross-repo
